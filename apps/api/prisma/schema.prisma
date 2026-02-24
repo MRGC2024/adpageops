@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  metaConnections MetaConnection[]
+  adAccounts AdAccount[]
+  settings  TenantSetting[]
+  auditLogs  AuditLog[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  passwordHash String
+  role      String   @default("tenant_user") // tenant_admin | tenant_user
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  auditLogs AuditLog[]
+  @@index([tenantId])
+}
+
+model MetaConnection {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId       String
+  metaUserId   String?
+  accessTokenEncrypted String
+  scopesJson   Json?    // ["ads_management", "ads_read", ...]
+  tokenExpiresAt DateTime?
+  status       String   @default("active") // active | revoked | error
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@unique([tenantId])
+  @@index([tenantId])
+}
+
+model AdAccount {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  metaAdAccountId String
+  name          String?
+  currency      String?
+  timezone      String?
+  isSelected    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  pages         Page[]
+  campaigns     Campaign[]
+  adsets        AdSet[]
+  ads           Ad[]
+  insightsDaily InsightDaily[]
+  alerts        Alert[]
+  @@unique([tenantId, metaAdAccountId])
+  @@index([tenantId])
+}
+
+model Page {
+  id                String   @id @default(cuid())
+  tenantId          String
+  adAccountId       String
+  adAccount         AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  metaPageId        String?   // page_id from Meta; NULL = UNKNOWN_IDENTITY
+  metaInstagramActorId String?
+  name              String?
+  identityResolved  Boolean  @default(true) // false = UNKNOWN_IDENTITY
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  ads               Ad[]
+  @@unique([tenantId, adAccountId, metaPageId])
+  @@index([tenantId, adAccountId])
+  @@index([tenantId, metaPageId])
+}
+
+model Campaign {
+  id             String   @id @default(cuid())
+  tenantId       String
+  adAccountId    String
+  adAccount      AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  metaCampaignId String
+  name           String?
+  status         String?
+  effectiveStatus String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  adsets         AdSet[]
+  @@unique([tenantId, metaCampaignId])
+  @@index([tenantId, adAccountId])
+}
+
+model AdSet {
+  id              String   @id @default(cuid())
+  tenantId        String
+  adAccountId     String
+  adAccount       AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  campaignId      String
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  metaAdSetId     String
+  name            String?
+  status          String?
+  effectiveStatus String?
+  optimizationGoal String?
+  billingEvent    String?
+  budgetJson      Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  ads             Ad[]
+  @@unique([tenantId, metaAdSetId])
+  @@index([tenantId, adAccountId])
+}
+
+model Ad {
+  id               String   @id @default(cuid())
+  tenantId         String
+  adAccountId      String
+  adAccount        AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  adSetId          String
+  adSet            AdSet    @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+  pageId           String?
+  page             Page?    @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  metaAdId         String
+  name             String?
+  configuredStatus String?
+  effectiveStatus  String?
+  operationalStatus String?  // DELIVERING | NOT_DELIVERING | IN_REVIEW | REJECTED | PAUSED | ACCOUNT_ISSUE
+  creativeId       String?   // meta creative id
+  creativeSnapshot Json?
+  lastSeenDeliveringAt DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  insightsDaily    InsightDaily[]
+  @@unique([tenantId, metaAdId])
+  @@index([tenantId, adAccountId])
+  @@index([tenantId, pageId])
+  @@index([tenantId, metaAdId])
+  @@index([tenantId, operationalStatus])
+}
+
+model InsightDaily {
+  id           String   @id @default(cuid())
+  tenantId     String
+  adAccountId  String
+  adAccount    AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  entityLevel  String   // ad | adset | campaign | page
+  entityId     String
+  date         DateTime @db.Date
+  spend        Decimal  @default(0) @db.Decimal(12, 4)
+  impressions  Int      @default(0)
+  clicks       Int      @default(0)
+  ctr          Decimal? @db.Decimal(10, 6)
+  cpm          Decimal? @db.Decimal(12, 4)
+  actions      Json?
+  actionValues Json?
+  createdAt    DateTime @default(now())
+  @@unique([tenantId, entityLevel, entityId, date])
+  @@index([tenantId, entityId, date])
+  @@index([tenantId, adAccountId, date])
+}
+
+model Alert {
+  id           String    @id @default(cuid())
+  tenantId     String
+  adAccountId  String
+  adAccount    AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  ruleKey      String    // same as type for backward compat
+  type         String?   // delivering_gt_n, rejected_7d, in_review_stale, not_delivering_days
+  severity     String    @default("medium") // low | medium | high
+  entityType   String?   // page | ad | adset
+  entityId     String?
+  payloadJson  Json      @map("payload") // { message, count, threshold, ... }
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  @@index([tenantId, adAccountId])
+  @@index([tenantId, resolvedAt])
+  @@index([tenantId, adAccountId, resolvedAt])
+}
+
+model TenantSetting {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key       String   // enable_alerts, enable_scoring, alert_thresholds, score_weights, data_retention_days, enable_demo_mode_override
+  valueJson Json
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String   // login, logout, meta_connect, meta_disconnect, ad_accounts_select, sync_run, alert_resolve, settings_update, unknown_identity
+  entityType String?
+  entityId   String?
+  payloadJson Json?
+  createdAt  DateTime @default(now())
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+}

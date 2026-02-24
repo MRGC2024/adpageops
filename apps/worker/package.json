@@ -1,0 +1,23 @@
+{
+  "name": "worker",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "pnpm exec prisma generate --schema=../api/prisma/schema.prisma && tsc",
+    "dev": "pnpm exec prisma generate --schema=../api/prisma/schema.prisma && ts-node src/main.ts",
+    "start": "node dist/main.js",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@adpageops/shared": "workspace:*",
+    "@prisma/client": "^5.22.0",
+    "bullmq": "^5.25.2",
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "prisma": "^5.22.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}
